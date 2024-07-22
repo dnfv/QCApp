@@ -34,6 +34,43 @@ def create_numbered_folders(root_folder):
         folder_counter[folder_type] = current_counter + 1
 
 # QC Server Logic
+class QCServer:
+    def __init__(self, incoming_path, completed_path, processed_path, done_path):
+        self.incoming_path = incoming_path
+        self.completed_path = completed_path
+        self.processed_path = processed_path
+        self.done_path = done_path
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.run)
+        self.running = False
+
+    def start_server(self):
+        self.running = True
+        self.timer.start(15000)  # 10,000 ms = 10 seconds
+        print("QC Server started.")
+
+    def stop_server(self):
+        self.timer.stop()
+        self.running = False
+        print("QC Server stopped.")
+
+    def run(self):
+        try:
+            move_folders_and_copy_images(self.incoming_path, self.completed_path, self.processed_path, self.done_path)
+        except FileNotFoundError as e:
+            self.stop_server()
+            self.show_error_message(str(e))
+        except Exception as e:
+            self.stop_server()
+            self.show_error_message(f"An error occurred in class QCServer: {e}")
+
+    def show_error_message(self, message):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Warning)
+        msg.setText(message)
+        msg.setWindowTitle("Error")
+        msg.exec_()
+
 def find_completed_parent_folder(incoming_path, completed_path, prefix):
     for root, dirs, files in os.walk(incoming_path):
         if prefix in dirs:
@@ -50,38 +87,50 @@ def copy_images_to_completed(source, destination):
 
 def move_folders_and_copy_images(incoming_path, completed_path, processed_path, done_path):
     error_path = os.path.join(processed_path, "_Error")
-    for processed_folder in os.listdir(processed_path):
-        processed_folder_path = os.path.join(processed_path, processed_folder)
-        if os.path.isdir(processed_folder_path):
-            if processed_folder == "_Error":
-                continue
+    try:
+        for processed_folder in os.listdir(processed_path):
+            processed_folder_path = os.path.join(processed_path, processed_folder)
+            if os.path.isdir(processed_folder_path):
+                if processed_folder == "_Error":
+                    continue
 
-            words = processed_folder.split()[:1]
-            prefix = ' '.join(words)
-            completed_parent_folder = find_completed_parent_folder(incoming_path, completed_path, prefix)
-
-            if not completed_parent_folder:
-                words = processed_folder.split()[:2]
+                words = processed_folder.split()[:1]
                 prefix = ' '.join(words)
                 completed_parent_folder = find_completed_parent_folder(incoming_path, completed_path, prefix)
 
-            if completed_parent_folder:
-                copy_images_to_completed(processed_folder_path, completed_parent_folder)
-                try:
-                    shutil.move(processed_folder_path, done_path)
-                    shutil.rmtree(os.path.join(completed_parent_folder, processed_folder), ignore_errors=True)
-                    print("Program Executed Successfully...")
-                except Exception as e:
+                if not completed_parent_folder:
+                    words = processed_folder.split()[:2]
+                    prefix = ' '.join(words)
+                    completed_parent_folder = find_completed_parent_folder(incoming_path, completed_path, prefix)
+
+                if completed_parent_folder:
+                    copy_images_to_completed(processed_folder_path, completed_parent_folder)
+                    destination_folder = os.path.join(completed_parent_folder, processed_folder)
+
+                    try:
+                        # Check if destination folder already exists in _Error
+                        if os.path.exists(destination_folder):
+                            # Move existing folder to _Error
+                            shutil.move(destination_folder, os.path.join(error_path, processed_folder))
+
+                        # Move processed_folder_path to done_path
+                        shutil.move(processed_folder_path, done_path)
+
+                        print(f"Folder '{processed_folder}' processed successfully.")
+                    except Exception as e:
+                        os.makedirs(error_path, exist_ok=True)
+                        shutil.move(processed_folder_path, error_path)
+                        print(f"An error occurred while processing folder '{processed_folder}': {e}")
+                else:
                     os.makedirs(error_path, exist_ok=True)
                     shutil.move(processed_folder_path, error_path)
-                    print(f"An error occurred: {e}")
-            else:
-                try:
-                    os.makedirs(error_path, exist_ok=True)
-                    shutil.move(processed_folder_path, error_path)
-                    print(f"Warning: {processed_folder} diskip, Folder tidak ada di incoming!.")
-                except Exception as e:
-                    print(f"An error occurred: {e}")
+                    print(f"Warning: {processed_folder} skipped, folder tidak ada di incoming!")
+    except FileNotFoundError as e:
+        print(f"An error occurred: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
 
 class LoginPage(QWidget):
     def __init__(self, parent=None):
@@ -135,20 +184,28 @@ class PathDialog(QWidget):
         self.done_path_edit = QLineEdit("")
         layout.addRow("Done Path:", self.done_path_edit)
 
-        self.start_qc_server_button = QPushButton("Start QC Server")
-        self.start_qc_server_button.clicked.connect(self.start_qc_server)
-        layout.addRow(self.start_qc_server_button)
+        self.qc_server = None
+        self.start_stop_button = QPushButton("Start QC Server")
+        self.start_stop_button.clicked.connect(self.toggle_server)
+        layout.addRow(self.start_stop_button)
 
         self.setLayout(layout)
 
-    def start_qc_server(self):
-        incoming_path = self.incoming_path_edit.text()
-        completed_path = self.completed_path_edit.text()
-        processed_path = self.processed_path_edit.text()
-        done_path = self.done_path_edit.text()
+    def toggle_server(self):
+        if not self.qc_server:
+            incoming_path = self.incoming_path_edit.text()
+            completed_path = self.completed_path_edit.text()
+            processed_path = self.processed_path_edit.text()
+            done_path = self.done_path_edit.text()
 
-        move_folders_and_copy_images(incoming_path, completed_path, processed_path, done_path)
-        print("QC Server started.")
+            self.qc_server = QCServer(incoming_path, completed_path, processed_path, done_path)
+
+        if self.qc_server.running:
+            self.qc_server.stop_server()
+            self.start_stop_button.setText("Start QC Server")
+        else:
+            self.qc_server.start_server()
+            self.start_stop_button.setText("Stop QC Server")
 
 class MainWindow(QWidget):
     def __init__(self):
