@@ -2,8 +2,8 @@ import sys
 import os
 import shutil
 import time
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton,
-                             QStackedWidget, QMessageBox, QFileDialog, QDialog, QFormLayout, QDialogButtonBox)
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton,
+                             QStackedWidget, QMessageBox, QDialog, QFormLayout, QDialogButtonBox)
 from PyQt5.QtCore import QTimer
 
 # Folder Counter Logic
@@ -106,7 +106,7 @@ class LoginPage(QWidget):
 
     def login(self):
         if self.id_label.text() == "admin" and self.password_label.text() == "admin":
-            self.parent_widget.setCurrentIndex(1)
+            self.parent_widget.switch_to_path_dialog()
         else:
             self.show_error_message()
 
@@ -153,9 +153,9 @@ class PathDialog(QWidget):
 class MainWindow(QWidget):
     def __init__(self):
         super(MainWindow, self).__init__()
+        self.stacked_widget = QStackedWidget(self)
         self.login_page = LoginPage(self)
         self.path_dialog = PathDialog(self)
-        self.stacked_widget = QStackedWidget(self)
         self.stacked_widget.addWidget(self.login_page)
         self.stacked_widget.addWidget(self.path_dialog)
 
@@ -163,13 +163,16 @@ class MainWindow(QWidget):
         layout.addWidget(self.stacked_widget)
         self.setLayout(layout)
 
-        self.login_page.login_button.clicked.connect(self.login)
+        self.login_page.login_button.clicked.connect(self.handle_login)
 
-    def login(self):
+    def handle_login(self):
         if self.login_page.id_label.text() == "admin" and self.login_page.password_label.text() == "admin":
-            self.stacked_widget.setCurrentWidget(self.path_dialog)
+            self.switch_to_path_dialog()
         else:
             self.login_page.show_error_message()
+
+    def switch_to_path_dialog(self):
+        self.stacked_widget.setCurrentWidget(self.path_dialog)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
