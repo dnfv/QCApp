@@ -1,7 +1,6 @@
 import sys
 import os
 import shutil
-import json
 import time
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton,
                              QStackedWidget, QMessageBox, QFileDialog, QDialog, QFormLayout, QDialogButtonBox)
@@ -34,9 +33,6 @@ def create_numbered_folders(root_folder):
         os.makedirs(new_folder_path)
         folder_counter[folder_type] = current_counter + 1
 
-def get_folder_from_user():
-    return QFileDialog.getExistingDirectory(None, "Select Parent Folder")
-
 # QC Server Logic
 def find_completed_parent_folder(incoming_path, completed_path, prefix):
     for root, dirs, files in os.walk(incoming_path):
@@ -60,7 +56,6 @@ def move_folders_and_copy_images(incoming_path, completed_path, processed_path, 
             if processed_folder == "_Error":
                 continue
 
-        if os.path.isdir(processed_folder_path):
             words = processed_folder.split()[:1]
             prefix = ' '.join(words)
             completed_parent_folder = find_completed_parent_folder(incoming_path, completed_path, prefix)
@@ -122,112 +117,59 @@ class LoginPage(QWidget):
         msg.setWindowTitle("Login Failed")
         msg.exec_()
 
-class PathDialog(QDialog):
-    def __init__(self, config, parent=None):
+class PathDialog(QWidget):
+    def __init__(self, parent=None):
         super(PathDialog, self).__init__(parent)
         self.setWindowTitle("Edit QC Server Paths")
-        self.config = config
         layout = QFormLayout()
 
-        self.incoming_path_edit = QLineEdit(self.config.get("incoming_path", ""))
+        self.incoming_path_edit = QLineEdit("")
         layout.addRow("Incoming Path:", self.incoming_path_edit)
 
-        self.completed_path_edit = QLineEdit(self.config.get("completed_path", ""))
+        self.completed_path_edit = QLineEdit("")
         layout.addRow("Completed Path:", self.completed_path_edit)
 
-        self.processed_path_edit = QLineEdit(self.config.get("processed_path", ""))
+        self.processed_path_edit = QLineEdit("")
         layout.addRow("Processed Path:", self.processed_path_edit)
 
-        self.done_path_edit = QLineEdit(self.config.get("done_path", ""))
+        self.done_path_edit = QLineEdit("")
         layout.addRow("Done Path:", self.done_path_edit)
 
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-        layout.addWidget(button_box)
+        self.start_qc_server_button = QPushButton("Start QC Server")
+        self.start_qc_server_button.clicked.connect(self.start_qc_server)
+        layout.addRow(self.start_qc_server_button)
 
         self.setLayout(layout)
 
-    def accept(self):
-        self.config["incoming_path"] = self.incoming_path_edit.text()
-        self.config["completed_path"] = self.completed_path_edit.text()
-        self.config["processed_path"] = self.processed_path_edit.text()
-        self.config["done_path"] = self.done_path_edit.text()
-        with open("config.json", "w") as config_file:
-            json.dump(self.config, config_file)
-        super(PathDialog, self).accept()
+    def start_qc_server(self):
+        incoming_path = self.incoming_path_edit.text()
+        completed_path = self.completed_path_edit.text()
+        processed_path = self.processed_path_edit.text()
+        done_path = self.done_path_edit.text()
 
-class MainPage(QWidget):
-    def __init__(self, parent=None):
-        super(MainPage, self).__init__(parent)
-        self.qc_server_running = False
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.run_qc_server)
+        move_folders_and_copy_images(incoming_path, completed_path, processed_path, done_path)
+        print("QC Server started.")
 
-        layout = QVBoxLayout()
-        self.folder_button = QPushButton("Folder Counter", self)
-        self.folder_button.clicked.connect(self.run_folder_counter)
-        layout.addWidget(self.folder_button)
-
-        self.qc_server_button = QPushButton("Start QC Server", self)
-        self.qc_server_button.clicked.connect(self.toggle_qc_server)
-        layout.addWidget(self.qc_server_button)
-
-        self.edit_paths_button = QPushButton("Edit QC Server Paths", self)
-        self.edit_paths_button.clicked.connect(self.edit_paths)
-        layout.addWidget(self.edit_paths_button)
-
-        self.setLayout(layout)
-
-        self.load_config()
-
-    def load_config(self):
-        if os.path.exists("config.json"):
-            with open("config.json", "r") as config_file:
-                self.config = json.load(config_file)
-        else:
-            self.config = {
-                "incoming_path": "",
-                "completed_path": "",
-                "processed_path": "",
-                "done_path": ""
-            }
-
-    def run_folder_counter(self):
-        folder_selected = get_folder_from_user()
-        if folder_selected:
-            create_numbered_folders(folder_selected)
-
-    def toggle_qc_server(self):
-        if self.qc_server_running:
-            self.qc_server_button.setText("Start QC Server")
-            self.qc_server_running = False
-            self.timer.stop()
-            print("QC Server stopped.")
-        else:
-            self.qc_server_button.setText("Stop QC Server")
-            self.qc_server_running = True
-            self.timer.start(60000)  # 60,000 ms = 60 seconds
-            print("QC Server started.")
-            self.run_qc_server()
-
-    def run_qc_server(self):
-        move_folders_and_copy_images(self.config["incoming_path"], self.config["completed_path"],
-                                     self.config["processed_path"], self.config["done_path"])
-
-    def edit_paths(self):
-        dialog = PathDialog(self.config, self)
-        if dialog.exec_() == QDialog.Accepted:
-            self.load_config()
-
-class MainWindow(QStackedWidget):
+class MainWindow(QWidget):
     def __init__(self):
         super(MainWindow, self).__init__()
         self.login_page = LoginPage(self)
-        self.main_page = MainPage(self)
-        self.addWidget(self.login_page)
-        self.addWidget(self.main_page)
-        self.setCurrentIndex(0)
+        self.path_dialog = PathDialog(self)
+        self.stacked_widget = QStackedWidget(self)
+        self.stacked_widget.addWidget(self.login_page)
+        self.stacked_widget.addWidget(self.path_dialog)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.stacked_widget)
+        self.setLayout(layout)
+
+        self.login_page.login_button.clicked.connect(self.login)
+
+    def login(self):
+        if self.login_page.id_label.text() == "admin" and self.login_page.password_label.text() == "admin":
+            self.stacked_widget.setCurrentWidget(self.path_dialog)
+        else:
+            self.login_page.show_error_message()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
